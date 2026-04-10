@@ -19,7 +19,7 @@ A comprehensive AI-powered help desk solution designed specifically for schools,
 
 2. **Clone the repository**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/Abhimancoder/project-1-sem-helpdesk.git
    cd project-1-sem-helpdesk
    ```
 
@@ -27,6 +27,51 @@ A comprehensive AI-powered help desk solution designed specifically for schools,
    ```bash
    npm install
    ```
+
+4. **Configure environment** (optional)
+   ```bash
+   cp .env.example .env
+   # Edit .env with your preferred settings
+   ```
+
+5. **Start Ollama** (in a separate terminal)
+   ```bash
+   ollama serve
+   ```
+
+6. **Start the server**
+   ```bash
+   npm start
+   ```
+
+7. **Open your browser**
+   - Navigate to `http://localhost:3000`
+   - Click the chat button (💬) to interact with the AI assistant
+
+## Environment Variables
+
+Create a `.env` file in the root directory:
+
+```env
+# Server Configuration
+PORT=3000
+NODE_ENV=development
+
+# Ollama AI Configuration
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=llama2
+
+# Session Management
+MAX_SESSIONS=1000
+SESSION_TIMEOUT=86400000  # 24 hours in milliseconds
+```
+
+## API Endpoints
+
+- `GET /` - Main application
+- `GET /health` - Health check endpoint
+- `POST /chat` - AI chat API
+- `WebSocket` - Real-time chat via Socket.IO
 
 4. **Start Ollama** (in a separate terminal)
    ```bash
