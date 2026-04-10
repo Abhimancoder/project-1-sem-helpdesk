@@ -4,9 +4,6 @@ const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
 
-// Polyfill fetch for older Node.js versions
-const fetch = require('node-fetch');
-
 // Environment variables with defaults
 const PORT = process.env.PORT || 3000;
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
