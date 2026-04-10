@@ -4,6 +4,10 @@ const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
 
+// Note: fetch is available globally in Node.js 18+
+// If you see linting errors, ensure your Node.js version supports fetch
+// or add: const fetch = require('node-fetch');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -20,14 +24,24 @@ app.use(express.static(path.join(__dirname, 'public')));
 const SYSTEM_MESSAGE = { role: "system", content: "You are a helpful college helpdesk assistant for educational institutions. Answer questions about admissions, fees, exams, courses, and campus services." };
 
 // Store chat histories per session (using socket ID or a simple session ID)
-let chatHistories = {};
+const chatHistories = new Map(); // Use Map for better memory management
 
-// Helper function to get or create chat history for a session
+/**
+ * Get or create chat history for a session
+ * @param {string} sessionId - The session identifier
+ * @returns {Array} The chat history array for the session
+ */
 function getChatHistory(sessionId) {
-  if (!chatHistories[sessionId]) {
-    chatHistories[sessionId] = [SYSTEM_MESSAGE];
+  if (!chatHistories.has(sessionId)) {
+    chatHistories.set(sessionId, [SYSTEM_MESSAGE]);
   }
-  return chatHistories[sessionId];
+  return chatHistories.get(sessionId);
+}
+
+// Cleanup function to prevent memory leaks (optional)
+function cleanupOldSessions() {
+  // In a production app, you might want to clean up old sessions
+  // For now, we'll let them accumulate as the app runs
 }
 
 // Serve the main website
@@ -48,7 +62,7 @@ app.post("/chat", async (req, res) => {
       // If messages are provided, use them but ensure system message is included
       const hasSystemMessage = incomingMessages.some(msg => msg.role === 'system');
       chatHistory = hasSystemMessage ? incomingMessages : [SYSTEM_MESSAGE, ...incomingMessages];
-      chatHistories[sessionId] = chatHistory;
+      chatHistories.set(sessionId, chatHistory);
     } else if (typeof userMessage === "string" && userMessage.trim()) {
       chatHistory.push({ role: "user", content: userMessage.trim() });
     } else {
