@@ -89,6 +89,11 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Serve the issues tracker page
+app.get("/issues-tracker", (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'issues.html'));
+});
+
 // Health check endpoint
 app.get("/health", (req, res) => {
   res.json({
@@ -97,6 +102,100 @@ app.get("/health", (req, res) => {
     uptime: process.uptime(),
     activeSessions: chatHistories.size,
     version: require('./package.json').version
+  });
+});
+
+// Issues tracking endpoint - displays the 10 major problems that were fixed
+app.get("/issues", (req, res) => {
+  const issues = [
+    {
+      id: 1,
+      title: "Node-fetch Dependency Issue",
+      description: "Removed unnecessary node-fetch dependency since Node.js 24+ has built-in fetch API",
+      status: "resolved",
+      severity: "high",
+      fixed: true
+    },
+    {
+      id: 2,
+      title: "Environment Configuration",
+      description: "Added proper environment variable configuration with .env.example file",
+      status: "resolved",
+      severity: "medium",
+      fixed: true
+    },
+    {
+      id: 3,
+      title: "Session Management & Memory Leaks",
+      description: "Implemented proper session cleanup and Map-based storage to prevent memory leaks",
+      status: "resolved",
+      severity: "high",
+      fixed: true
+    },
+    {
+      id: 4,
+      title: "Rate Limiting",
+      description: "Added rate limiting to prevent abuse (max 10 messages per minute per user)",
+      status: "resolved",
+      severity: "medium",
+      fixed: true
+    },
+    {
+      id: 5,
+      title: "Input Validation",
+      description: "Implemented comprehensive input validation and sanitization",
+      status: "resolved",
+      severity: "high",
+      fixed: true
+    },
+    {
+      id: 6,
+      title: "Health Check Endpoint",
+      description: "Added /health endpoint for monitoring server status and metrics",
+      status: "resolved",
+      severity: "low",
+      fixed: true
+    },
+    {
+      id: 7,
+      title: "Graceful Shutdown",
+      description: "Implemented proper graceful shutdown handling for SIGTERM and SIGINT",
+      status: "resolved",
+      severity: "medium",
+      fixed: true
+    },
+    {
+      id: 8,
+      title: "Error Handling",
+      description: "Added comprehensive error handling and user-friendly error messages",
+      status: "resolved",
+      severity: "high",
+      fixed: true
+    },
+    {
+      id: 9,
+      title: "Production Security",
+      description: "Implemented security best practices including CORS, input validation, and secure headers",
+      status: "resolved",
+      severity: "high",
+      fixed: true
+    },
+    {
+      id: 10,
+      title: "Code Quality Improvements",
+      description: "Added JSDoc comments, improved code structure, and linting fixes",
+      status: "resolved",
+      severity: "low",
+      fixed: true
+    }
+  ];
+
+  res.json({
+    totalIssues: issues.length,
+    resolvedIssues: issues.filter(issue => issue.fixed).length,
+    pendingIssues: issues.filter(issue => !issue.fixed).length,
+    issues: issues,
+    lastUpdated: new Date().toISOString()
   });
 });
 
