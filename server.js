@@ -3,366 +3,127 @@ const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
+require("dotenv").config();
 
-// Environment variables with defaults
 const PORT = process.env.PORT || 3000;
-const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama2';
-const NODE_ENV = process.env.NODE_ENV || 'development';
+const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3";
 
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
-  cors: {
-    origin: NODE_ENV === 'production' ? false : "*", // Disable CORS in production for security
-    methods: ["GET", "POST"]
-  }
+  cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Add payload size limit
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 
-const SYSTEM_MESSAGE = { role: "system", content: "You are a helpful college helpdesk assistant for educational institutions. Answer questions about admissions, fees, exams, courses, and campus services." };
+// SYSTEM PROMPT
+const SYSTEM_MESSAGE = {
+  role: "system",
+  content: "You are a helpful college helpdesk assistant for admissions, fees, exams, and campus support."
+};
 
-// Store chat histories per session (using socket ID or a simple session ID)
-const chatHistories = new Map(); // Use Map for better memory management
-const SESSION_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-const MAX_SESSIONS = 1000; // Maximum number of active sessions
+// MEMORY
+const chatHistories = new Map();
 
-/**
- * Get or create chat history for a session
- * @param {string} sessionId - The session identifier
- * @returns {Array} The chat history array for the session
- */
-function getChatHistory(sessionId) {
-  if (!sessionId || typeof sessionId !== 'string' || sessionId.length > 100) {
-    throw new Error('Invalid session ID');
-  }
-
+function getHistory(sessionId) {
   if (!chatHistories.has(sessionId)) {
-    chatHistories.set(sessionId, {
-      messages: [SYSTEM_MESSAGE],
-      lastActivity: Date.now(),
-      created: Date.now()
-    });
+    chatHistories.set(sessionId, [SYSTEM_MESSAGE]);
   }
-
-  const session = chatHistories.get(sessionId);
-  session.lastActivity = Date.now(); // Update last activity
-
-  return session.messages;
+  return chatHistories.get(sessionId);
 }
 
-/**
- * Cleanup old sessions to prevent memory leaks
- */
-function cleanupOldSessions() {
-  const now = Date.now();
-  const toDelete = [];
-
-  for (const [sessionId, session] of chatHistories.entries()) {
-    if (now - session.lastActivity > SESSION_TIMEOUT) {
-      toDelete.push(sessionId);
-    }
-  }
-
-  toDelete.forEach(sessionId => chatHistories.delete(sessionId));
-
-  // If still too many sessions, remove oldest ones
-  if (chatHistories.size > MAX_SESSIONS) {
-    const sortedSessions = Array.from(chatHistories.entries())
-      .sort((a, b) => a[1].lastActivity - b[1].lastActivity);
-
-    const sessionsToRemove = sortedSessions.slice(0, chatHistories.size - MAX_SESSIONS);
-    sessionsToRemove.forEach(([sessionId]) => chatHistories.delete(sessionId));
-  }
-
-  console.log(`Cleaned up ${toDelete.length} old sessions. Active sessions: ${chatHistories.size}`);
-}
-
-// Run cleanup every hour
-setInterval(cleanupOldSessions, 60 * 60 * 1000);
-
-// Serve the main website
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Serve the issues tracker page
-app.get("/issues-tracker", (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'issues.html'));
-});
-
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    activeSessions: chatHistories.size,
-    version: require('./package.json').version
-  });
-});
-
-// Issues tracking endpoint - displays the 10 major problems that were fixed
-app.get("/issues", (req, res) => {
-  const issues = [
-    {
-      id: 1,
-      title: "Node-fetch Dependency Issue",
-      description: "Removed unnecessary node-fetch dependency since Node.js 24+ has built-in fetch API",
-      status: "resolved",
-      severity: "high",
-      fixed: true
-    },
-    {
-      id: 2,
-      title: "Environment Configuration",
-      description: "Added proper environment variable configuration with .env.example file",
-      status: "resolved",
-      severity: "medium",
-      fixed: true
-    },
-    {
-      id: 3,
-      title: "Session Management & Memory Leaks",
-      description: "Implemented proper session cleanup and Map-based storage to prevent memory leaks",
-      status: "resolved",
-      severity: "high",
-      fixed: true
-    },
-    {
-      id: 4,
-      title: "Rate Limiting",
-      description: "Added rate limiting to prevent abuse (max 10 messages per minute per user)",
-      status: "resolved",
-      severity: "medium",
-      fixed: true
-    },
-    {
-      id: 5,
-      title: "Input Validation",
-      description: "Implemented comprehensive input validation and sanitization",
-      status: "resolved",
-      severity: "high",
-      fixed: true
-    },
-    {
-      id: 6,
-      title: "Health Check Endpoint",
-      description: "Added /health endpoint for monitoring server status and metrics",
-      status: "resolved",
-      severity: "low",
-      fixed: true
-    },
-    {
-      id: 7,
-      title: "Graceful Shutdown",
-      description: "Implemented proper graceful shutdown handling for SIGTERM and SIGINT",
-      status: "resolved",
-      severity: "medium",
-      fixed: true
-    },
-    {
-      id: 8,
-      title: "Error Handling",
-      description: "Added comprehensive error handling and user-friendly error messages",
-      status: "resolved",
-      severity: "high",
-      fixed: true
-    },
-    {
-      id: 9,
-      title: "Production Security",
-      description: "Implemented security best practices including CORS, input validation, and secure headers",
-      status: "resolved",
-      severity: "high",
-      fixed: true
-    },
-    {
-      id: 10,
-      title: "Code Quality Improvements",
-      description: "Added JSDoc comments, improved code structure, and linting fixes",
-      status: "resolved",
-      severity: "low",
-      fixed: true
-    }
-  ];
-
-  res.json({
-    totalIssues: issues.length,
-    resolvedIssues: issues.filter(issue => issue.fixed).length,
-    pendingIssues: issues.filter(issue => !issue.fixed).length,
-    issues: issues,
-    lastUpdated: new Date().toISOString()
-  });
-});
-
-// AI Chat API
-app.post("/chat", async (req, res) => {
+// CALL OLLAMA
+async function askOllama(messages) {
   try {
-    const userMessage = req.body.message;
-    const incomingMessages = req.body.messages;
-    const sessionId = req.body.sessionId || 'default';
-
-    if (!sessionId || typeof sessionId !== 'string') {
-      return res.status(400).json({ reply: "Invalid session ID." });
-    }
-
-    let chatHistory = getChatHistory(sessionId);
-
-    if (incomingMessages && Array.isArray(incomingMessages)) {
-      // If messages are provided, use them but ensure system message is included
-      const hasSystemMessage = incomingMessages.some(msg => msg.role === 'system');
-      chatHistory = hasSystemMessage ? incomingMessages : [SYSTEM_MESSAGE, ...incomingMessages];
-      chatHistories.get(sessionId).messages = chatHistory;
-    } else if (typeof userMessage === "string" && userMessage.trim()) {
-      chatHistory.push({ role: "user", content: userMessage.trim() });
-    } else {
-      return res.status(400).json({ reply: "Invalid request payload. Please provide a valid message." });
-    }
-
-    console.log(`Processing chat for session ${sessionId}, history length: ${chatHistory.length}`);
-
-    const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    const res = await fetch(`${OLLAMA_HOST}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: OLLAMA_MODEL,
-        messages: chatHistory,
+        messages,
         stream: false
-      }),
-      timeout: 30000 // 30 second timeout
+      })
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Ollama API error: ${response.status} ${response.statusText} - ${errorText}`);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(text);
     }
 
-    const data = await response.json();
-    if (!data.message || !data.message.content) {
-      throw new Error('Invalid response from Ollama API');
+    const data = await res.json();
+    return data?.message?.content || "No response from AI";
+  } catch (err) {
+    console.error("Ollama Error:", err.message);
+    return "AI service not running. Start Ollama first.";
+  }
+}
+
+// ROUTES
+app.get("/", (req, res) => {
+  res.send("🚀 AI Help Desk Running");
+});
+
+app.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    model: OLLAMA_MODEL,
+    uptime: process.uptime(),
+    ollama: OLLAMA_HOST
+  });
+});
+
+// CHAT API
+app.post("/chat", async (req, res) => {
+  try {
+    const { message, sessionId = "default" } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ reply: "Message required" });
     }
 
-    const reply = data.message.content;
-    chatHistory.push({ role: "assistant", content: reply });
+    const history = getHistory(sessionId);
+    history.push({ role: "user", content: message });
+
+    const reply = await askOllama(history);
+
+    history.push({ role: "assistant", content: reply });
 
     res.json({ reply, sessionId });
 
-  } catch (error) {
-    console.error("Chat API Error:", error.message);
-    res.status(500).json({ reply: "Sorry, I'm having trouble connecting to the AI service. Please try again later." });
+  } catch (err) {
+    console.error("CHAT ERROR:", err.message);
+    res.status(500).json({ reply: "Server error" });
   }
 });
 
-// Socket.IO for real-time chat
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+// SOCKET
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
 
-  socket.on('chat_message', async (message) => {
-    if (!message || typeof message !== 'string' || !message.trim()) {
-      socket.emit('bot_reply', 'Please send a valid message.');
-      return;
-    }
+  socket.on("chat_message", async (msg) => {
+    const history = getHistory(socket.id);
 
-    // Rate limiting: max 10 messages per minute per user
-    const now = Date.now();
-    const session = chatHistories.get(socket.id);
-    if (session) {
-      const recentMessages = session.messages.filter(msg =>
-        msg.role === 'user' && (now - (msg.timestamp || 0)) < 60000
-      );
-      if (recentMessages.length >= 10) {
-        socket.emit('bot_reply', 'Too many messages. Please wait a moment before sending another message.');
-        return;
-      }
-    }
+    history.push({ role: "user", content: msg });
 
-    try {
-      const sessionId = socket.id; // Use socket ID as session ID
-      let chatHistory = getChatHistory(sessionId);
+    const reply = await askOllama(history);
 
-      const userMessage = { role: "user", content: message.trim(), timestamp: now };
-      chatHistory.push(userMessage);
+    history.push({ role: "assistant", content: reply });
 
-      console.log(`Socket chat for session ${sessionId}, history length: ${chatHistory.length}`);
-
-      const response = await fetch(`${OLLAMA_HOST}/api/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: OLLAMA_MODEL,
-          messages: chatHistory,
-          stream: false
-        }),
-        timeout: 30000
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ollama API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      if (!data.message || !data.message.content) {
-        throw new Error('Invalid response from Ollama API');
-      }
-
-      const reply = data.message.content;
-      const assistantMessage = { role: "assistant", content: reply, timestamp: Date.now() };
-      chatHistory.push(assistantMessage);
-
-      socket.emit('bot_reply', reply);
-    } catch (error) {
-      console.error("Socket Chat Error:", error.message);
-      socket.emit('bot_reply', "Sorry, I'm having trouble responding right now. Please try again.");
-    }
+    socket.emit("bot_reply", reply);
   });
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-    // Note: We keep chat history for potential reconnection
-    // Cleanup will happen automatically via cleanupOldSessions()
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
   });
 });
 
+// START SERVER
 server.listen(PORT, () => {
-  console.log(`🚀 AI Help Desk Server running on port ${PORT}`);
-  console.log(`📊 Health check available at http://localhost:${PORT}/health`);
-  console.log(`🌍 Environment: ${NODE_ENV}`);
-  console.log(`🤖 AI Model: ${OLLAMA_MODEL} at ${OLLAMA_HOST}`);
-});
-
-// Graceful shutdown handling
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    console.log('Process terminated');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully');
-  server.close(() => {
-    console.log('Process terminated');
-    process.exit(0);
-  });
-});
-
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  process.exit(1);
+  console.log(`🚀 Server running: http://localhost:${PORT}`);
+  console.log(`🤖 Model: ${OLLAMA_MODEL}`);
+  console.log(`🌍 Ollama: ${OLLAMA_HOST}`);
 });
