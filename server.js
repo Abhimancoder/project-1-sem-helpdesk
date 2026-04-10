@@ -1,9 +1,7 @@
-require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
-const OpenAI = require("openai");
 const path = require("path");
 
 const app = express();
@@ -19,13 +17,18 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "demo-key"
-});
+const SYSTEM_MESSAGE = { role: "system", content: "You are a helpful college helpdesk assistant for educational institutions. Answer questions about admissions, fees, exams, courses, and campus services." };
 
-let chatHistory = [
-  { role: "system", content: "You are a helpful college helpdesk assistant for educational institutions. Answer questions about admissions, fees, exams, courses, and campus services." }
-];
+// Store chat histories per session (using socket ID or a simple session ID)
+let chatHistories = {};
+
+// Helper function to get or create chat history for a session
+function getChatHistory(sessionId) {
+  if (!chatHistories[sessionId]) {
+    chatHistories[sessionId] = [SYSTEM_MESSAGE];
+  }
+  return chatHistories[sessionId];
+}
 
 // Serve the main website
 app.get("/", (req, res) => {
@@ -37,27 +40,52 @@ app.post("/chat", async (req, res) => {
   try {
     const userMessage = req.body.message;
     const incomingMessages = req.body.messages;
+    const sessionId = req.body.sessionId || 'default'; // Use sessionId from request
+
+    let chatHistory = getChatHistory(sessionId);
 
     if (incomingMessages && Array.isArray(incomingMessages)) {
-      chatHistory = [...incomingMessages];
-    } else if (typeof userMessage === "string") {
-      chatHistory.push({ role: "user", content: userMessage });
+      // If messages are provided, use them but ensure system message is included
+      const hasSystemMessage = incomingMessages.some(msg => msg.role === 'system');
+      chatHistory = hasSystemMessage ? incomingMessages : [SYSTEM_MESSAGE, ...incomingMessages];
+      chatHistories[sessionId] = chatHistory;
+    } else if (typeof userMessage === "string" && userMessage.trim()) {
+      chatHistory.push({ role: "user", content: userMessage.trim() });
     } else {
-      return res.status(400).json({ reply: "Invalid request payload" });
+      return res.status(400).json({ reply: "Invalid request payload. Please provide a valid message." });
     }
 
-    const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: chatHistory,
+    console.log(`Processing chat for session ${sessionId}, history length: ${chatHistory.length}`);
+
+    const response = await fetch('http://localhost:11434/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama2',
+        messages: chatHistory,
+        stream: false
+      })
     });
 
-    const reply = response.choices[0].message.content;
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Ollama API error: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    if (!data.message || !data.message.content) {
+      throw new Error('Invalid response from Ollama API');
+    }
+
+    const reply = data.message.content;
     chatHistory.push({ role: "assistant", content: reply });
 
-    res.json({ reply });
+    res.json({ reply, sessionId });
 
   } catch (error) {
-    console.error("OpenAI Error:", error);
+    console.error("Chat API Error:", error.message);
     res.status(500).json({ reply: "Sorry, I'm having trouble connecting to the AI service. Please try again later." });
   }
 });
@@ -67,26 +95,55 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   socket.on('chat_message', async (message) => {
-    try {
-      chatHistory.push({ role: "user", content: message });
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      socket.emit('bot_reply', 'Please send a valid message.');
+      return;
+    }
 
-      const response = await client.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: chatHistory,
+    try {
+      const sessionId = socket.id; // Use socket ID as session ID
+      let chatHistory = getChatHistory(sessionId);
+
+      chatHistory.push({ role: "user", content: message.trim() });
+
+      console.log(`Socket chat for session ${sessionId}, history length: ${chatHistory.length}`);
+
+      const response = await fetch('http://localhost:11434/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama2',
+          messages: chatHistory,
+          stream: false
+        })
       });
 
-      const reply = response.choices[0].message.content;
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Ollama API error: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      if (!data.message || !data.message.content) {
+        throw new Error('Invalid response from Ollama API');
+      }
+
+      const reply = data.message.content;
       chatHistory.push({ role: "assistant", content: reply });
 
       socket.emit('bot_reply', reply);
     } catch (error) {
-      console.error("Socket Chat Error:", error);
-      socket.emit('bot_reply', "Sorry, I'm having trouble responding right now.");
+      console.error("Socket Chat Error:", error.message);
+      socket.emit('bot_reply', "Sorry, I'm having trouble responding right now. Please try again.");
     }
   });
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    // Optionally clean up chat history after some time
+    // setTimeout(() => delete chatHistories[socket.id], 3600000); // Clean up after 1 hour
   });
 });
 

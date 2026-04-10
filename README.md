@@ -13,39 +13,43 @@ A comprehensive AI-powered help desk solution designed specifically for schools,
 
 ## Quick Start
 
-1. **Clone the repository**
+1. **Install Ollama** (for local AI processing)
+   - Download and install Ollama from https://ollama.ai
+   - Pull the Llama2 model: `ollama pull llama2`
+
+2. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd ai-helpdesk-system
+   cd project-1-sem-helpdesk
    ```
 
-2. **Install dependencies**
+3. **Install dependencies**
    ```bash
    npm install
    ```
 
-3. **Set up environment variables**
-   - Copy `.env.example` to `.env`
-   - Add your OpenAI API key: `OPENAI_API_KEY=your_key_here`
+4. **Start Ollama** (in a separate terminal)
+   ```bash
+   ollama serve
+   ```
 
-4. **Start the server**
+5. **Start the server**
    ```bash
    npm start
    ```
 
-5. **Open your browser**
-   - Navigate to `http://lnocalhost:3000`
+6. **Open your browser**
+   - Navigate to `http://localhost:3000`
    - Click the chat button (💬) to interact with the AI assistant
 
 ## Project Structure
 
 ```
-ai-helpdesk-system/
-├── server.js              # Main server file with Express, Socket.IO, and OpenAI integration
+project-1-sem-helpdesk/
+├── server.js              # Main server file with Express, Socket.IO, and Ollama integration
 ├── public/
 │   └── index.html         # Main website with embedded chat widget
 ├── package.json           # Node.js dependencies and scripts
-├── .env                   # Environment variables (API keys)
 └── README.md             # This file
 ```
 

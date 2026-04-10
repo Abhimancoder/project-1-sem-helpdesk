@@ -391,7 +391,7 @@
     <div class="cw-avatar">🤖</div>
     <div>
       <div class="cw-title">EduDesk AI Assistant</div>
-      <div class="cw-subtitle">Powered by OpenAI · Always online</div>
+      <div class="cw-subtitle">Powered by Ollama · Always online</div>
     </div>
     <div class="cw-actions">
       <button class="cw-btn" onclick="clearChat()">Clear</button>
@@ -411,7 +411,7 @@
       <svg width="17" height="17" viewBox="0 0 24 24" fill="white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
     </button>
   </div>
-  <div class="cw-powered">Powered by <a href="https://openai.com" target="_blank">OpenAI</a></div>
+  <div class="cw-powered">Powered by <a href="https://ollama.ai" target="_blank">Ollama</a></div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -420,6 +420,7 @@
 let history = [];
 let streaming = false;
 let opened = false;
+let sessionId = null; // Will be set when first message is sent
 
 const SYSTEM = `You are EduDesk AI, a friendly and knowledgeable virtual assistant for educational institutions in India. You help students, staff, and administrators with:
 - Admissions (documents, eligibility, process, deadlines)
@@ -496,9 +497,15 @@ async function sendMessage() {
     const res = await fetch('/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text, messages: history })
+      body: JSON.stringify({ message: text, messages: history, sessionId: sessionId })
     });
     const data = await res.json();
+
+    // Set sessionId if not already set
+    if (!sessionId && data.sessionId) {
+      sessionId = data.sessionId;
+    }
+
     removeTyping();
     addMessage(data.reply, 'bot');
     history.push({ role: 'user', content: text });
@@ -520,6 +527,7 @@ function chipSend(chip) {
 function clearChat() {
   document.getElementById('cwBody').innerHTML = '';
   history = [];
+  sessionId = null; // Reset session ID
   addMessage('Hello! I\'m EduDesk AI, your educational assistant. How can I help you today?', 'bot');
 }
 
