@@ -7,7 +7,9 @@ require("dotenv").config();
 
 const PORT = process.env.PORT || 3000;
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL || "llama3";
+
+// 🔥 Stable model fallback chain (IMPORTANT FIX)
+const MODELS = ["mistral", "llama3.2", "phi"];
 
 const app = express();
 const server = http.createServer(app);
@@ -23,10 +25,11 @@ app.use(express.static(path.join(__dirname, "public")));
 // SYSTEM PROMPT
 const SYSTEM_MESSAGE = {
   role: "system",
-  content: "You are a helpful college helpdesk assistant for admissions, fees, exams, and campus support."
+  content:
+    "You are a helpful college helpdesk assistant for admissions, fees, exams, and campus support."
 };
 
-// MEMORY
+// MEMORY STORE
 const chatHistories = new Map();
 
 function getHistory(sessionId) {
@@ -36,30 +39,36 @@ function getHistory(sessionId) {
   return chatHistories.get(sessionId);
 }
 
-// CALL OLLAMA
+// 🔥 SAFE OLLAMA CALL WITH FALLBACK MODELS
 async function askOllama(messages) {
-  try {
-    const res = await fetch(`${OLLAMA_HOST}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: OLLAMA_MODEL,
-        messages,
-        stream: false
-      })
-    });
+  for (const model of MODELS) {
+    try {
+      const res = await fetch(`${OLLAMA_HOST}/api/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages,
+          stream: false
+        })
+      });
 
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(text);
+      if (!res.ok) {
+        const text = await res.text();
+        console.log(`❌ Model ${model} failed:`, text);
+        continue; // try next model
+      }
+
+      const data = await res.json();
+      console.log(`✅ Response from model: ${model}`);
+
+      return data?.message?.content || "No response from AI";
+    } catch (err) {
+      console.log(`❌ Error with model ${model}:`, err.message);
     }
-
-    const data = await res.json();
-    return data?.message?.content || "No response from AI";
-  } catch (err) {
-    console.error("Ollama Error:", err.message);
-    return "AI service not running. Start Ollama first.";
   }
+
+  return "⚠️ All AI models failed. Please check Ollama or install a model.";
 }
 
 // ROUTES
@@ -70,13 +79,13 @@ app.get("/", (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    model: OLLAMA_MODEL,
+    models: MODELS,
     uptime: process.uptime(),
     ollama: OLLAMA_HOST
   });
 });
 
-// CHAT API
+// CHAT API (REST)
 app.post("/chat", async (req, res) => {
   try {
     const { message, sessionId = "default" } = req.body;
@@ -86,6 +95,7 @@ app.post("/chat", async (req, res) => {
     }
 
     const history = getHistory(sessionId);
+
     history.push({ role: "user", content: message });
 
     const reply = await askOllama(history);
@@ -93,14 +103,15 @@ app.post("/chat", async (req, res) => {
     history.push({ role: "assistant", content: reply });
 
     res.json({ reply, sessionId });
-
   } catch (err) {
     console.error("CHAT ERROR:", err.message);
-    res.status(500).json({ reply: "Server error" });
+    res.status(500).json({
+      reply: "Server error while processing chat"
+    });
   }
 });
 
-// SOCKET
+// SOCKET.IO CHAT
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
@@ -124,6 +135,6 @@ io.on("connection", (socket) => {
 // START SERVER
 server.listen(PORT, () => {
   console.log(`🚀 Server running: http://localhost:${PORT}`);
-  console.log(`🤖 Model: ${OLLAMA_MODEL}`);
-  console.log(`🌍 Ollama: ${OLLAMA_HOST}`);
+  console.log(`🤖 Ollama Host: ${OLLAMA_HOST}`);
+  console.log(`🧠 Models: ${MODELS.join(" → ")}`);
 });
