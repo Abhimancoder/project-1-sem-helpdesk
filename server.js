@@ -3,14 +3,17 @@ const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
+const fs = require("fs");
 require("dotenv").config();
 
+// ───────────────── CONFIG ─────────────────
 const PORT = process.env.PORT || 3000;
 const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
 
-// 🔥 Stable model fallback chain (IMPORTANT FIX)
+// 🔥 Fallback models
 const MODELS = ["mistral", "llama3.2", "phi"];
 
+// ───────────────── APP SETUP ─────────────────
 const app = express();
 const server = http.createServer(app);
 
@@ -22,30 +25,51 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
-// SYSTEM PROMPT
-const SYSTEM_MESSAGE = {
-  role: "system",
-  content:
-    "You are a helpful college helpdesk assistant for admissions, fees, exams, and campus support."
-};
+// ───────────────── SYSTEM PROMPT ─────────────────
+const SYSTEM_MESSAGE = `
+You are EduDesk AI, a helpful assistant for Shri Ramswaroop Memorial University (SRMU), Lucknow.
 
-// MEMORY STORE
+Answer ONLY using the provided data when possible.
+If not found, give general guidance.
+
+Keep answers:
+- Short (max 120 words)
+- Clear
+- Use bullet/numbered lists when needed
+- End with a helpful follow-up question
+`;
+
+// ───────────────── LOAD TXT DATA ─────────────────
+let knowledge = "";
+
+function loadKnowledge() {
+  try {
+    knowledge = fs.readFileSync("./data/college.txt", "utf-8");
+    console.log("✅ Knowledge loaded successfully");
+  } catch (err) {
+    console.log("❌ Error loading knowledge:", err.message);
+  }
+}
+
+// ───────────────── MEMORY ─────────────────
 const chatHistories = new Map();
 
 function getHistory(sessionId) {
   if (!chatHistories.has(sessionId)) {
-    chatHistories.set(sessionId, [SYSTEM_MESSAGE]);
+    chatHistories.set(sessionId, []);
   }
   return chatHistories.get(sessionId);
 }
 
-// 🔥 SAFE OLLAMA CALL WITH FALLBACK MODELS
+// ───────────────── OLLAMA CALL ─────────────────
 async function askOllama(messages) {
   for (const model of MODELS) {
     try {
       const res = await fetch(`${OLLAMA_HOST}/api/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json"
+        },
         body: JSON.stringify({
           model,
           messages,
@@ -55,25 +79,25 @@ async function askOllama(messages) {
 
       if (!res.ok) {
         const text = await res.text();
-        console.log(`❌ Model ${model} failed:`, text);
-        continue; // try next model
+        console.log(`❌ ${model} failed:`, text);
+        continue;
       }
 
       const data = await res.json();
-      console.log(`✅ Response from model: ${model}`);
+      console.log(`✅ Using model: ${model}`);
 
       return data?.message?.content || "No response from AI";
     } catch (err) {
-      console.log(`❌ Error with model ${model}:`, err.message);
+      console.log(`❌ Error with ${model}:`, err.message);
     }
   }
 
-  return "⚠️ All AI models failed. Please check Ollama or install a model.";
+  return "⚠️ All AI models failed. Please check Ollama.";
 }
 
-// ROUTES
+// ───────────────── ROUTES ─────────────────
 app.get("/", (req, res) => {
-  res.send("🚀 AI Help Desk Running");
+  res.send("🚀 EduDesk AI Running");
 });
 
 app.get("/health", (req, res) => {
@@ -81,11 +105,11 @@ app.get("/health", (req, res) => {
     status: "ok",
     models: MODELS,
     uptime: process.uptime(),
-    ollama: OLLAMA_HOST
+    knowledgeLoaded: !!knowledge
   });
 });
 
-// CHAT API (REST)
+// ───────────────── CHAT API ─────────────────
 app.post("/chat", async (req, res) => {
   try {
     const { message, sessionId = "default" } = req.body;
@@ -96,10 +120,20 @@ app.post("/chat", async (req, res) => {
 
     const history = getHistory(sessionId);
 
+    // Build full context
+    const messages = [
+      {
+        role: "system",
+        content: SYSTEM_MESSAGE + "\n\nDATA:\n" + knowledge
+      },
+      ...history,
+      { role: "user", content: message }
+    ];
+
+    const reply = await askOllama(messages);
+
+    // Save memory
     history.push({ role: "user", content: message });
-
-    const reply = await askOllama(history);
-
     history.push({ role: "assistant", content: reply });
 
     res.json({ reply, sessionId });
@@ -111,17 +145,25 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// SOCKET.IO CHAT
+// ───────────────── SOCKET.IO ─────────────────
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
   socket.on("chat_message", async (msg) => {
     const history = getHistory(socket.id);
 
+    const messages = [
+      {
+        role: "system",
+        content: SYSTEM_MESSAGE + "\n\nDATA:\n" + knowledge
+      },
+      ...history,
+      { role: "user", content: msg }
+    ];
+
+    const reply = await askOllama(messages);
+
     history.push({ role: "user", content: msg });
-
-    const reply = await askOllama(history);
-
     history.push({ role: "assistant", content: reply });
 
     socket.emit("bot_reply", reply);
@@ -132,9 +174,11 @@ io.on("connection", (socket) => {
   });
 });
 
-// START SERVER
+// ───────────────── START SERVER ─────────────────
+loadKnowledge();
+
 server.listen(PORT, () => {
   console.log(`🚀 Server running: http://localhost:${PORT}`);
-  console.log(`🤖 Ollama Host: ${OLLAMA_HOST}`);
+  console.log(`🤖 Ollama: ${OLLAMA_HOST}`);
   console.log(`🧠 Models: ${MODELS.join(" → ")}`);
 });
